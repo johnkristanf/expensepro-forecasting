@@ -3,9 +3,9 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from contextlib import asynccontextmanager
 
-from app.api.v1.forecasting import forecast_router
-from app.database.session import Database
-from app.utils.route import group
+from src.api.v1.forecasting import forecast_router
+from src.database.session import Database
+from src.utils.route import group
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

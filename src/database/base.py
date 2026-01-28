@@ -2,7 +2,7 @@ from sqlalchemy import Table, MetaData
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.orm import DeclarativeBase, declarative_base
 
-from app.core.config import settings
+from src.core.config import settings
 
 Base: DeclarativeBase = declarative_base()
 
