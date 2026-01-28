@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from contextlib import asynccontextmanager
 
+from app.api.v1.forecasting import forecast_router
 from app.database.session import Database
 from app.utils.route import group
 
@@ -25,7 +26,7 @@ app.add_middleware(
 
 api_v1_router = group(
     "/api/v1",
-    (job_router, "/job", ["Job"]),
+    (forecast_router, "/forecasts", ["Forecasts"]),
 )
 
 app.include_router(api_v1_router)
