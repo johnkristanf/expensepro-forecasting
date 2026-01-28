@@ -1,10 +1,8 @@
 from typing import AsyncGenerator
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy.orm import DeclarativeBase, declarative_base, sessionmaker
+from sqlalchemy.orm import sessionmaker
 
 from app.core.config import settings
-
-Base: DeclarativeBase = declarative_base()
 
 class Database:
     engine = None
