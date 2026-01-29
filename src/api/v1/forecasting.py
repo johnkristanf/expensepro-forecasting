@@ -67,6 +67,9 @@ async def get_forecast_data(
         .reset_index()
     )
 
+    # Fill missing dates with 0 amount, indicating missing data -> no transportation or absent day, instead of unknown
+    daily_expense["total_amount"] = daily_expense["total_amount"].fillna(0.0)
+
     # Calendar Features
     daily_expense["is_weekend"] = (daily_expense["date_spent"].dt.weekday == 6).astype(
         int
@@ -79,28 +82,12 @@ async def get_forecast_data(
     date_as_date = daily_expense["date_spent"].dt.date
     daily_expense["is_holiday"] = date_as_date.isin(ph_holidays).astype(int)
 
-
-    # Fill missing dates with 0 amount, indicating missing data -> no transportation or absent day, instead of unknown
-    daily_expense["total_amount"] = daily_expense["total_amount"].fillna(0.0)
-
     daily_expense["is_absent_day"] = (
         (daily_expense["is_weekend"] == 0)
         & (daily_expense["is_holiday"] == 0)
         & (daily_expense["total_amount"] == 0)
     ).astype(int)
 
-    # Set IQR value to non-zeros to avoid large drop in 1st quantile
-    iqr_base = daily_expense[
-        (daily_expense["is_weekend"] == 0)
-        & (daily_expense["is_holiday"] == 0)
-        & (daily_expense["total_amount"] > 0)
-    ]
-
-    iqr_cap_amount = forecasting_service.get_iqr_capped_amount(iqr_base)
-    daily_expense["total_amount_capped"] = daily_expense["total_amount"].clip(
-        lower=0, upper=iqr_cap_amount
-    )
-    
     # Optional features, for business explaination purposes
     daily_expense["holiday_name"] = date_as_date.map(ph_holidays)
 
@@ -112,5 +99,4 @@ async def get_forecast_data(
     return {
         "message": "Export successful",
         "path": output_path,
-        "iqr_cap_amount": iqr_cap_amount,
     }
