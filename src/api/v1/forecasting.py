@@ -1,11 +1,14 @@
 import decimal
+import holidays
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.services.dependencies import get_forecasting_service
+from src.services.forecasting import ForecastingService
 from src.database.base import reflect_existing_table
 from src.database.session import Database
 
@@ -15,11 +18,11 @@ forecast_router = APIRouter()
 @forecast_router.get("/")
 async def get_forecast_data(
     session: AsyncSession = Depends(Database.get_async_session),
+    forecasting_service: ForecastingService = Depends(get_forecasting_service)
 ):
     expenses_table = await reflect_existing_table("expenses")
     categories_table = await reflect_existing_table("categories")
 
-    # Join expenses with categories, select only created_at and amount from expense, and category name; filter Transportation only
     join_stmt = (
         select(
             expenses_table.c.date_spent,
@@ -38,7 +41,6 @@ async def get_forecast_data(
     result = await session.execute(join_stmt)
     rows = result.fetchall()
 
-    # Aggregate total amount per date (YYYY-MM-DD)
     aggregation = defaultdict(float)
     min_date = None
     max_date = None
@@ -52,25 +54,9 @@ async def get_forecast_data(
         if max_date is None or date_value > max_date:
             max_date = date_value
 
-    # Get all following dates from min to max date
-    if min_date and max_date:
-        all_dates = []
-        current = min_date
-        while current <= max_date:
-            all_dates.append(current)
-            current = current + timedelta(days=1)
-    else:
-        all_dates = []
+    all_dates = forecasting_service.build_date_range(min_date, max_date)
 
-    # Fill in missing dates, especially Sundays, with amount 0, and add is_weekend property
-    data = []
-    for date in sorted(all_dates):
-        amount = aggregation.get(date, 0.0)
-        is_weekend = 1 if date.weekday() == 6 else 0  # Sunday is 6
-        data.append({
-            "date": date,
-            "amount": amount,
-            "is_weekend": is_weekend
-        })
+    ph_holidays = holidays.country_holidays('PH')
+    data = forecasting_service.fill_date_gaps_with_properties(all_dates, aggregation, ph_holidays)
 
     return {"data": data}
