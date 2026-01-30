@@ -1,9 +1,6 @@
-import decimal
-import holidays
+import os
 import pandas as pd
 
-from collections import defaultdict
-from datetime import datetime
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import select
@@ -13,6 +10,7 @@ from src.services.dependencies import get_forecasting_service
 from src.services.forecasting import ForecastingService
 from src.database.base import reflect_existing_table
 from src.database.session import Database
+from src.utils.data import get_ph_holidays
 
 forecast_router = APIRouter()
 
@@ -42,8 +40,6 @@ async def get_forecast_data(
     result = await session.execute(join_stmt)
     rows = result.fetchall()
 
-    import os
-
     df = pd.DataFrame(rows, columns=["date_spent", "amount"])
 
     df["date_spent"] = pd.to_datetime(df["date_spent"]).dt.date
@@ -70,26 +66,44 @@ async def get_forecast_data(
     # Fill missing dates with 0 amount, indicating missing data -> no transportation or absent day, instead of unknown
     daily_expense["total_amount"] = daily_expense["total_amount"].fillna(0.0)
 
-    # Calendar Features
-    daily_expense["is_weekend"] = (daily_expense["date_spent"].dt.weekday == 6).astype(
+    # Calendar Features (Holiday & Weekends)
+    daily_expense["weekend"] = (daily_expense["date_spent"].dt.weekday == 6).astype(
         int
     )
 
-    ph_holidays = holidays.country_holidays(
-        country="PH", years=daily_expense["date_spent"].dt.year.unique()
-    )
+    ph_holidays = get_ph_holidays(years=daily_expense["date_spent"].dt.year.unique())
 
     date_as_date = daily_expense["date_spent"].dt.date
-    daily_expense["is_holiday"] = date_as_date.isin(ph_holidays).astype(int)
+    daily_expense["holiday"] = date_as_date.isin(ph_holidays).astype(int)
+    daily_expense["holiday_name"] = date_as_date.map(ph_holidays)
 
-    daily_expense["is_absent_day"] = (
-        (daily_expense["is_weekend"] == 0)
-        & (daily_expense["is_holiday"] == 0)
-        & (daily_expense["total_amount"] == 0)
+
+    # Behavior Frequency Features (Work or Absent)
+    daily_expense["has_spend"] = (daily_expense["total_amount"] > 0).astype(int)
+    daily_expense["spend_freq_7d"] =  daily_expense["has_spend"].rolling(window=7, min_periods=1).mean()
+    daily_expense["spend_freq_14d"] =  daily_expense["has_spend"].rolling(window=14, min_periods=1).mean()
+    daily_expense["spend_freq_30d"] =  daily_expense["has_spend"].rolling(window=30, min_periods=1).mean()
+   
+   
+    daily_expense["borrowed_money"] = (
+        ((daily_expense["weekend"] == 0) & 
+         (daily_expense["holiday"] == 0) & 
+         (daily_expense["has_spend"] == 0))
+    ).astype(int)
+    
+    
+    # Outlier Flags
+    Q1 = daily_expense["total_amount"].quantile(0.25)
+    Q3 = daily_expense["total_amount"].quantile(0.75)
+    IQR = Q3 - Q1
+
+    upper = Q3 + 1.5 * IQR
+
+    daily_expense["is_outlier"] = (
+        daily_expense["total_amount"] > upper
     ).astype(int)
 
-    # Optional features, for business explaination purposes
-    daily_expense["holiday_name"] = date_as_date.map(ph_holidays)
+
 
     output_dir = "exports"
     os.makedirs(output_dir, exist_ok=True)
