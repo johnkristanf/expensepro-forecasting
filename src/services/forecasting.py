@@ -66,13 +66,9 @@ class ForecastingService:
             )
         return data
 
-    def get_iqr_capped_amount(self, df: DataFrame):
-        Q1 = df["total_amount"].quantile(0.25)
-        Q3 = df["total_amount"].quantile(0.75)
+    def get_iqr_upper_bound(self, df: DataFrame, category: str):
+        Q1 = df[category].quantile(0.25)
+        Q3 = df[category].quantile(0.75)
         IQR = Q3 - Q1
-        print("Q1: " + str(Q1))
-        print("Q3: " + str(Q3))
-        print("IQR: " + str(IQR))
 
-        cap_amount = Q3 + 1.5 * IQR
-        return cap_amount
+        return Q3 + 1.5 * IQR

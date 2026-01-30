@@ -1,6 +1,7 @@
 import os
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
 
 
 from fastapi import APIRouter, Depends
@@ -76,9 +77,23 @@ async def get_forecast_data(
     daily_expense["holiday"] = date_as_date.isin(ph_holidays).astype(int)
     daily_expense["holiday_name"] = date_as_date.map(ph_holidays)
 
-    # Behavior Frequency Features (Work or Absent)
+    # Behavior Frequency Features (Spent or Borrowed)
     daily_expense["has_spend"] = (daily_expense["total_amount"] > 0).astype(int)
 
+    daily_expense["borrowed_money"] = (
+        (
+            (daily_expense["weekend"] == 0)
+            & (daily_expense["holiday"] == 0)
+            & (daily_expense["has_spend"] == 0)
+        )
+    ).astype(int)
+
+
+    # Outlier Flags
+    upper = forecasting_service.get_iqr_upper_bound(daily_expense, "total_amount")
+    daily_expense["is_outlier"] = (daily_expense["total_amount"] > upper).astype(int)
+    
+    # Rolling means
     daily_expense["rolling_mean_7d"] = (
         daily_expense["total_amount"].rolling(7, min_periods=1).mean()
     )
@@ -91,36 +106,55 @@ async def get_forecast_data(
         daily_expense["total_amount"].rolling(30, min_periods=1).mean()
     )
 
-
-    daily_expense["borrowed_money"] = (
-        (
-            (daily_expense["weekend"] == 0)
-            & (daily_expense["holiday"] == 0)
-            & (daily_expense["has_spend"] == 0)
-        )
-    ).astype(int)
-
+    # Average spend
     daily_expense["avg_spend_per_active_day_30d"] = daily_expense[
         "total_amount"
-    ].rolling(30).sum() / daily_expense["has_spend"].rolling(30).sum().replace(
+    ].rolling(30, min_periods=1).sum() / daily_expense["has_spend"].rolling(
+        30, min_periods=1
+    ).sum().replace(
         0, np.nan
     )
+    
+    
+    df = daily_expense.copy()
+    df["year_month"] = df["date_spent"].dt.to_period("M")
+    df["month_name"] = df["date_spent"].dt.strftime("%B")
 
-    # Outlier Flags
-    Q1 = daily_expense["total_amount"].quantile(0.25)
-    Q3 = daily_expense["total_amount"].quantile(0.75)
-    IQR = Q3 - Q1
+    monthly = df.groupby("year_month").agg(
+        month_name=("month_name", "first"),
+        total_amount=("total_amount", "sum"),                     # TARGET
+        active_days=("has_spend", "sum"),
+        rolling_mean_30d=("rolling_mean_30d", "mean"),
+        avg_spend_intensity=("avg_spend_per_active_day_30d", "mean"),
+        weekend_ratio=("weekend", "mean"),
+        holiday_days=("holiday", "sum"),
+    )
+    
+    # output_dir = "exports"
+    # os.makedirs(output_dir, exist_ok=True)
+    # output_path = os.path.join(output_dir, "monthly_transportation.csv")
+    # monthly.to_csv(output_path, index=False)
+    
+    monthly["lag_1m"] = monthly["total_amount"].shift(1).fillna(0)
+    monthly["lag_2m"] = monthly["total_amount"].shift(2).fillna(0)
+    monthly["lag_3m"] = monthly["total_amount"].shift(3).fillna(0)
 
-    upper = Q3 + 1.5 * IQR
 
-    daily_expense["is_outlier"] = (daily_expense["total_amount"] > upper).astype(int)
+    # output_dir = "exports"
+    # os.makedirs(output_dir, exist_ok=True)
+    # output_path = os.path.join(output_dir, "monthly_transportation_with_lag.csv")
+    # monthly.to_csv(output_path, index=False)
+    
+    plt.rcParams["figure.figsize"] = (8, 4)
 
-    output_dir = "exports"
-    os.makedirs(output_dir, exist_ok=True)
-    output_path = os.path.join(output_dir, "transportation_forecast.csv")
-    daily_expense.to_csv(output_path, index=False)
+    plt.plot(monthly.index.astype(str), monthly["total_amount"], marker="o")
+    plt.title("Total Amount Over Time")
+    plt.xlabel("Month")
+    plt.ylabel("Total Amount")
+    plt.grid(True)
+    plt.show()
+
 
     return {
         "message": "Export successful",
-        "path": output_path,
     }
