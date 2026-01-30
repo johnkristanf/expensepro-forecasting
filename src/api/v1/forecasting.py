@@ -1,4 +1,5 @@
 import os
+import numpy as np
 import pandas as pd
 
 
@@ -67,9 +68,7 @@ async def get_forecast_data(
     daily_expense["total_amount"] = daily_expense["total_amount"].fillna(0.0)
 
     # Calendar Features (Holiday & Weekends)
-    daily_expense["weekend"] = (daily_expense["date_spent"].dt.weekday == 6).astype(
-        int
-    )
+    daily_expense["weekend"] = (daily_expense["date_spent"].dt.weekday == 6).astype(int)
 
     ph_holidays = get_ph_holidays(years=daily_expense["date_spent"].dt.year.unique())
 
@@ -77,21 +76,36 @@ async def get_forecast_data(
     daily_expense["holiday"] = date_as_date.isin(ph_holidays).astype(int)
     daily_expense["holiday_name"] = date_as_date.map(ph_holidays)
 
-
     # Behavior Frequency Features (Work or Absent)
     daily_expense["has_spend"] = (daily_expense["total_amount"] > 0).astype(int)
-    daily_expense["spend_freq_7d"] =  daily_expense["has_spend"].rolling(window=7, min_periods=1).mean()
-    daily_expense["spend_freq_14d"] =  daily_expense["has_spend"].rolling(window=14, min_periods=1).mean()
-    daily_expense["spend_freq_30d"] =  daily_expense["has_spend"].rolling(window=30, min_periods=1).mean()
-   
-   
+
+    daily_expense["rolling_mean_7d"] = (
+        daily_expense["total_amount"].rolling(7, min_periods=1).mean()
+    )
+
+    daily_expense["rolling_mean_14d"] = (
+        daily_expense["total_amount"].rolling(14, min_periods=1).mean()
+    )
+
+    daily_expense["rolling_mean_30d"] = (
+        daily_expense["total_amount"].rolling(30, min_periods=1).mean()
+    )
+
+
     daily_expense["borrowed_money"] = (
-        ((daily_expense["weekend"] == 0) & 
-         (daily_expense["holiday"] == 0) & 
-         (daily_expense["has_spend"] == 0))
+        (
+            (daily_expense["weekend"] == 0)
+            & (daily_expense["holiday"] == 0)
+            & (daily_expense["has_spend"] == 0)
+        )
     ).astype(int)
-    
-    
+
+    daily_expense["avg_spend_per_active_day_30d"] = daily_expense[
+        "total_amount"
+    ].rolling(30).sum() / daily_expense["has_spend"].rolling(30).sum().replace(
+        0, np.nan
+    )
+
     # Outlier Flags
     Q1 = daily_expense["total_amount"].quantile(0.25)
     Q3 = daily_expense["total_amount"].quantile(0.75)
@@ -99,11 +113,7 @@ async def get_forecast_data(
 
     upper = Q3 + 1.5 * IQR
 
-    daily_expense["is_outlier"] = (
-        daily_expense["total_amount"] > upper
-    ).astype(int)
-
-
+    daily_expense["is_outlier"] = (daily_expense["total_amount"] > upper).astype(int)
 
     output_dir = "exports"
     os.makedirs(output_dir, exist_ok=True)
