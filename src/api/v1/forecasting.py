@@ -80,18 +80,18 @@ async def get_forecast_data(
     # Behavior Frequency Features (Spent or Borrowed)
     daily_expense["has_spend"] = (daily_expense["total_amount"] > 0).astype(int)
 
-    daily_expense["borrowed_money"] = (
-        (
-            (daily_expense["weekend"] == 0)
-            & (daily_expense["holiday"] == 0)
-            & (daily_expense["has_spend"] == 0)
-        )
-    ).astype(int)
+    # daily_expense["borrowed_money"] = (
+    #     (
+    #         (daily_expense["weekend"] == 0)
+    #         & (daily_expense["holiday"] == 0)
+    #         & (daily_expense["has_spend"] == 0)
+    #     )
+    # ).astype(int)
 
 
     # Outlier Flags
-    upper = forecasting_service.get_iqr_upper_bound(daily_expense, "total_amount")
-    daily_expense["is_outlier"] = (daily_expense["total_amount"] > upper).astype(int)
+    # upper = forecasting_service.get_iqr_upper_bound(daily_expense, "total_amount")
+    # daily_expense["is_outlier"] = (daily_expense["total_amount"] > upper).astype(int)
     
     # Rolling means
     daily_expense["rolling_mean_7d"] = (
